@@ -1,0 +1,223 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+use Getopt::Long qw(GetOptionsFromArray :config pass_through);
+use Pod::Usage;
+use Cwd qw( abs_path );
+use File::Basename qw( dirname );
+use English;
+
+exit main(@ARGV) if !caller;
+
+sub main {
+    ## set defaults
+    my %options = (
+        "input-file" => "/var/lib/mlocate/mlocate.db",
+        "set-ids"    => $UID == 0,
+    );
+
+    GetOptionsFromArray( \@_, \%options, 'input-file=s', 'transform-path=s@',
+        'set-ids!' )
+      or die;
+
+    umask 077;
+
+    if ( !@_ ) {
+        die "Missing prefixes to split\n";
+    }
+
+    my ( @prefixes, %output_db );
+
+    for my $arg (@_) {
+        my ( $prefix, $target ) = split_escape( ":", $arg, 2 );
+        if ( !-d $prefix ) {
+            warn "Skipping $prefix: not a directory";
+        }
+        else {
+            $prefix = abs_path($prefix);
+            die $arg if !$prefix;
+            $prefix =~ s{/$}{};
+            die $arg if !$prefix;
+            push @prefixes, $prefix;
+            if ( !defined $target ) {
+                $target = "$prefix/.mlocate.db";
+            }
+            $output_db{$prefix} = $target;
+        }
+    }
+
+    open( my $base_db, '<:bytes', $options{"input-file"} )
+      or die "Can't open source database: $!.\n";
+
+    my $header = get_bytes( $base_db, 16 );
+    my $config_size = unpack( "x8Nx4", $header );
+    my $root        = read_string($base_db);
+    my $config      = get_bytes( $base_db, $config_size );
+
+    ## cache open file handles
+    my %open_dbs;
+
+    while ( !eof($base_db) ) {
+        my ( $dir, $dir_header ) = read_directory($base_db);
+        my $entries = read_dir_entries($base_db);
+
+        for my $prefix (@prefixes) {
+
+            ## $prefix has to be identical or under $dir
+            if ( index( "$dir/", "$prefix/" ) == 0 ) {
+                if ( not exists $open_dbs{"$output_db{$prefix}.tmp"} ) {
+                    $open_dbs{"$output_db{$prefix}.tmp"} =
+                      open_new_db( "$output_db{$prefix}.tmp",
+                        $options{"set-ids"} );
+                }
+                my $db = $open_dbs{"$output_db{$prefix}.tmp"};
+
+                my $transformed_dir =
+                  transform_path( $dir, @{ $options{"transform-path"} } );
+
+                if ( $dir eq $prefix ) {
+                    truncate( $db, 0 );
+                    print {$db} $header . $transformed_dir . "\x00" . $config;
+                }
+
+                print {$db} $dir_header . $transformed_dir . "\x00" . $entries;
+            }
+        }
+    }
+    for my $file ( values %output_db ) {
+        rename "$file.tmp", $file;
+    }
+    return 0;
+}
+
+sub read_string {
+    my ($fh) = @_;
+    return read_until( $fh, "\x00" );
+}
+
+sub read_until {
+    my ( $fh, $marker ) = @_;
+    return do { local $/ = $marker; <$fh> };
+}
+
+sub get_bytes {
+    my ( $fh, $num ) = @_;
+    my $data;
+    my $char = read( $fh, $data, $num );
+    return $data;
+}
+
+sub open_new_db {
+    my ( $db_file, $change_ids ) = @_;
+
+    if ($change_ids) {
+        my $parent_dir = dirname($db_file);
+        my ( $uid, $gid ) = ( stat($parent_dir) )[ 4, 5 ];
+        $EGID = $gid;
+        $EUID = $uid;
+    }
+
+    open( my $db, '>>:bytes', $db_file )
+      or die "Can't open target database $db_file: $!.\n";
+
+    if ($change_ids) {
+        ( $EUID, $EGID ) = ( $UID, $GID );
+    }
+    return $db;
+}
+
+sub read_dir_entries {
+    my ($fh) = shift;
+    my $data = read_until( $fh, "\x02" );
+
+    ## Now it is getting complicated: \x02 is a allowed character
+    ## for files and directory names, so we need to check if we really
+    ## found the end of directory entries. There should be three
+    ## possibilities:
+
+    ## 1. if $data is just one character long (and by definition, it's
+    ##    \x02 ) we found an empty directory
+    return $data if $data eq "\x02";
+
+    ## 2. $data is two chars long (and these character have to match [\x00\x01]\x02)
+    ##    this is a file starting with a \x02
+    ##    in this case we just read until the next \x02
+    ## 3. $data is longer and \x02 could occur everywhere. The
+    ##    entries have to end with \x00\x02 (the end of the last string
+    ##    plus \x02 for end of entries). The only case, where this would be
+    ##    misleading is a file starting with an \x02. This will result
+    ##    in the sequence \x00\x00\x02 (\x00 for the end of the last string,
+    ##    \x00 for being a file and \x02 as first character). Every occurence
+    ##    of \x00\x02 proceeded by another character has to be end of entries.
+
+    while ( length($data) eq 2 or substr( $data, -3 ) !~ "[^\x00]\x00\x02" ) {
+        $data .= read_until( $fh, "\x02" );
+    }
+    ## Puh!
+    return $data;
+}
+
+sub read_directory {
+    my $fh         = shift;
+    my $dir_header = get_bytes( $fh, 16 );
+    my $dir        = read_string($fh);
+    chop($dir);    ## remove \x00
+    return $dir, $dir_header;
+}
+
+sub split_escape {
+    my ( $delim, $string, $count ) = @_;
+    $string =~ s/\\$delim/\x00/g;
+    my @data = split( $delim, $string, $count );
+    s/\x00/$delim/g for @data;
+    return @data;
+}
+
+sub transform_path {
+    my ( $string, @rules ) = @_;
+    for my $rule (@rules) {
+        my ( $from, $to ) = split_escape( '=>', $rule, 2 );
+        eval { $string =~ s/$from/$to/g };
+        if ($@) {
+            die "Tranformation failed: $@.\n";
+        }
+    }
+    return $string;
+}
+
+__END__
+
+=head1 NAME
+
+mlocate-split - Split mlocate.db based on directory prefixes
+
+=head1 SYNOPSIS
+
+mlocate-split [--input-file=DB] [--transform-path FROM=E<gt>TO]...  prefix prefix2:db ...
+
+=head1 OPTIONS
+
+=over 8
+
+=item B<--input-file=DB>
+
+Database to split. The database has be in the format described by
+I<mlocate.db(5)>. If not specified I</var/lib/mlocate.db> is used.
+
+=item B<--transform-path "FROM=E<gt>TO">
+
+
+=back
+
+=head1 DESCRIPTION
+
+mlocate-split reads the input database and creates databases for all
+files under the specified directory prefixes. The prefix can contain
+a colon. In this case the substring before the colon is the directory
+prefix and the part after specifies its database file. If no database
+file is provided, the filename is assumed to be I<prefix/.mlocate.db>.
+
+=head1 AUTHOR
+
+Mario Domgoergen I<<mdom@taz.de>>
