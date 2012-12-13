@@ -1,0 +1,11 @@
+Source: mlocate-split
+Section: perl
+Priority: optional
+Build-Depends: debhelper (>= 7.0.17), perl
+Maintainer: Mario Domgoergen <mdom@taz.de>
+Standards-Version: 3.9.1
+
+Package: mlocate-split
+Architecture: all
+Depends: ${misc:Depends}, ${perl:Depends}
+Description: Split mlocate.db based on directory prefixes

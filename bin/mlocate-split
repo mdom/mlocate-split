@@ -8,6 +8,8 @@ use Cwd qw( abs_path );
 use File::Basename qw( dirname );
 use English;
 
+our $VERSION = '0.01';
+
 exit main(@ARGV) if !caller;
 
 sub main {
@@ -31,10 +33,7 @@ sub main {
 
     for my $arg (@_) {
         my ( $prefix, $target ) = split_escape( ":", $arg, 2 );
-        if ( !-d $prefix ) {
-            warn "Skipping $prefix: not a directory";
-        }
-        else {
+        if ( -d $prefix ) {
             $prefix = abs_path($prefix);
             die $arg if !$prefix;
             $prefix =~ s{/$}{};
