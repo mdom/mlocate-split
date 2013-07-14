@@ -1,0 +1,65 @@
+=head1 NAME
+
+mlocate-split - Split mlocate.db based on directory prefixes
+
+=head1 SYNOPSIS
+
+mlocate-split [--input-file=DB] [--transform-path FROM=E<gt>TO]...  prefix prefix2:db ...
+
+=head1 OPTIONS
+
+=over 4
+
+=item B<--input-file=DB>
+
+Database to split. The database has be in the format described by
+I<mlocate.db(5)>. If not specified I</var/lib/mlocate.db> is used.
+
+=item B<--transform-path "FROM=E<gt>TO">
+
+Before written to its new database, paths can be be transformed. The
+argument left of the arrow is the left operand to perls substition
+operator and the right argument its replacement. The option can be given
+multiple times and the substitions will be applied in order.
+
+This can be useful, if the the original database indexes paths under
+a differant mount point than on the client machines. Homedirectories
+could be mounted on /export/home/... on the file server and on /home on
+the clients. Only afer applying I</export/home=E<gt>/home> the clients would be
+able to find the files at the right location.
+
+=back
+
+=head1 DESCRIPTION
+
+mlocate-split reads the input database and creates new databases for all
+files under the specified directory prefixes. The prefix can contain a
+colon. In this case the substring before the colon is the directory prefix
+and the part after specifies its database file. If no file for the new
+database is provided, the filename is assumed to be I<prefix/.mlocate.db>.
+
+This script was mainly developed to help users find their files
+faster. Home directories are often mounted from the fileserver, so the
+local mlocate database doesn't contain their files. This resulted various
+search tools to just call find over and over gain for every new search. It
+would be possible to execute updatedb to also index network filesystems
+but this would have been strenous and pointless as the mlocate.db on
+the server has already been updated. With this script it's possible to
+just split the servers mlocate.db and save a userspecific mlocate.db in
+their home directory.
+
+To use this new databases just add it to the users I<$LOCATE_PATH>.
+
+=head1 EXAMPLE
+
+  getent passwd | \
+  perl -F: -lane 'print "/export$F[5]" if $F[5] =~ m{/home/\w+/\w+}' | \
+  xargs /usr/local/bin/mlocate-split --transform-path '/export/home=>/home
+
+=head1 SEE ALSO
+
+L<locatedb(5)>, L<updatedb(1)>, L<locate(1)>
+
+=head1 AUTHOR
+
+Mario Domgoergen I<<mario@domgoergen.com>>
