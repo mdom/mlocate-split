@@ -3,6 +3,7 @@
 use strict;
 use warnings;
 use Test::More;
+use Test::Output;
 use FindBin qw($Bin);
 require "$Bin/../bin/mlocate-split";
 
@@ -17,14 +18,18 @@ system( 'updatedb', '-l0', "--output=$Bin/all.db",
 
 main( "--database=$Bin/all.db", "$Bin/homes/dash", "$Bin/homes/sparkle" );
 
-$output = qx(locate --database=$Bin/homes/dash/.mlocate.db dash);
-is($output,<<EOF, "Check if dashes files are split");
+stdout_is {
+    system("locate --database=$Bin/homes/dash/.mlocate.db dash")
+}
+    <<EOF, "Check if dashes files are split";
 $Bin/homes/dash
 $Bin/homes/dash/file01
 EOF
 
-$output = qx(locate --database=$Bin/homes/sparkle/.mlocate.db sparkle);
-is($output,<<EOF, "Check if sparkles files are split");
+stdout_is {
+    system("locate --database=$Bin/homes/sparkle/.mlocate.db sparkle");
+}
+<<EOF, "Check if sparkles files are split";
 $Bin/homes/sparkle
 $Bin/homes/sparkle/file01
 EOF
