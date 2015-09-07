@@ -45,7 +45,7 @@ sub main {
     }
 
     open( my $base_db, '<:bytes', $options{"database"} )
-      or die "Can't open source database: $!.\n";
+      or die "Can't open database $options{database}: $!.\n";
 
     my $header      = get_bytes( $base_db, 16 );
     my $config_size = unpack( "x8Nx4", $header );
@@ -116,7 +116,7 @@ sub open_new_db {
     }
 
     open( my $db, '>>:bytes', $db_file )
-      or die "Can't open target database $db_file: $!.\n";
+      or die "Can't open database $db_file: $!.\n";
 
     if ($change_ids) {
         ( $EUID, $EGID ) = ( $UID, $GID );
