@@ -15,11 +15,11 @@ exit main(@ARGV) if !caller;
 sub main {
     ## set defaults
     my %options = (
-        'input-file' => "/var/lib/mlocate/mlocate.db",
         'set-ids'    => $UID == 0,
+        'database' => "/var/lib/mlocate/mlocate.db",
     );
 
-    GetOptionsFromArray( \@_, \%options, 'input-file=s', 'transform-path=s@',
+    GetOptionsFromArray( \@_, \%options, 'database=s', 'transform-path=s@',
         'set-ids!' )
       or die;
 
@@ -44,7 +44,7 @@ sub main {
         }
     }
 
-    open( my $base_db, '<:bytes', $options{"input-file"} )
+    open( my $base_db, '<:bytes', $options{"database"} )
       or die "Can't open source database: $!.\n";
 
     my $header      = get_bytes( $base_db, 16 );
@@ -191,13 +191,13 @@ mlocate-split - Split mlocate.db based on directory prefixes
 
 =head1 SYNOPSIS
 
-mlocate-split [--input-file=DB] [--transform-path FROM=E<gt>TO]...  prefix prefix2:db ...
+mlocate-split [--database=DB] [--transform-path FROM=E<gt>TO]...  prefix prefix2:db ...
 
 =head1 OPTIONS
 
 =over 4
 
-=item B<--input-file=DB>
+=item B<--database=DB>
 
 Database to split. The database has be in the format described by
 I<mlocate.db(5)>. If not specified I</var/lib/mlocate.db> is used.
@@ -219,7 +219,7 @@ able to find the files at the right location.
 
 =head1 DESCRIPTION
 
-mlocate-split reads the input database and creates new databases for all
+mlocate-split reads the database and creates new databases for all
 files under the specified directory prefixes. The prefix can contain a
 colon. In this case the substring before the colon is the directory prefix
 and the part after specifies its database file. If no file for the new
