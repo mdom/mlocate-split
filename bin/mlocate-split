@@ -183,6 +183,8 @@ sub transform_path {
     return $string;
 }
 
+1;
+
 __END__
 
 =head1 NAME
