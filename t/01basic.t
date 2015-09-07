@@ -34,4 +34,12 @@ $Bin/homes/sparkle
 $Bin/homes/sparkle/file01
 EOF
 
+stderr_is {
+	eval { main( "--database=$Bin/no.db", "$Bin/homes/dash", "$Bin/homes/sparkle" ) };
+	warn "$@" if $@;
+}
+<<EOF, "Use not existing database";
+Can't open database $Bin/no.db: No such file or directory.
+EOF
+
 done_testing();
